@@ -1,0 +1,24 @@
+<?php
+
+/**
+* hook_enable
+*/
+function vragentrommel_enable(){
+	//check if question_state vocabulary has the required terms (answered & unanswered)
+	$voc = taxonomy_vocabulary_machine_name_load('question_state');
+	$tree = taxonomy_get_tree($voc->vid);
+	if(count($tree) == 0){
+		//no terms so add them
+		$answered = (object) array(
+			'vid' => $voc->vid,
+			'name' => 'Answered',
+		);
+		taxonomy_term_save($answered);
+		
+		$unanswered = (object) array(
+			'vid' => $voc->vid,
+			'name' => 'Unanswered',
+		);
+		taxonomy_term_save($unanswered);
+	}
+}

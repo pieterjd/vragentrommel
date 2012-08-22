@@ -1,0 +1,246 @@
+<?php
+/**
+ * @file
+ * Code for the Vragentrommel feature.
+ */
+
+include_once 'vragentrommel.features.inc';
+/**
+Permissions of vragentrommel
+*/
+function vragentrommel_permission(){
+  $perms= array(
+    'answer' => array(
+      'title' => t('Answer a question'),
+    ),
+  ); 
+  return $perms;
+}
+/*
+On my local drupal site, I created  a new content type message, hence the name.
+You can do this on your on content type as well!
+
+I want to change the form of creating a new message node
+The form's id is message_node_form so the hook_form_FORMID_alter is
+hook_form_message_node_form_alter
+*/
+function vragentrommel_form_question_node_form_alter(&$form, &$form_state, $form_id){
+	//check if logged in user can answer the question
+	//dsm('in question form');
+	
+	//check if we are going to change existing content and have answer permissions
+	if(!is_null($form['nid']['#value']) && user_access('answer')){
+		// node id exists, so we are answering
+		if(user_access('answer')){
+			//dsm('you can answer this question');
+			
+			//remove title
+			unset($form['title']);
+			
+			//add the rendered question
+			$node = node_load($form['nid']['#value']);
+			$question_rendered = node_view($node);
+			//dsm($node);
+			//remove the text box containing the question
+			unset($form['body']);						
+			unset($form['field_course_term']);
+			//unset($form['field_state']);
+			//make field_state readonly
+			$form['field_state']['und']['#attributes']['disabled'] = TRUE;
+
+			//dsm($question_rendered);
+			$form['rendered_question'] = array(
+				'#type' => 'fieldset', 
+				'#title' => t('Question by Student'), 
+				'#collapsible' => TRUE, 
+				'#collapsed' => FALSE,
+			);
+			$form['rendered_question']['question'] = $question_rendered;
+			
+			//arrange response elements
+			//fieldset
+			//updated: now using field group module
+			/*
+			$form['response'] = array(
+				'#type' => 'fieldset', 
+				'#title' => t('Response by Expert'), 
+				'#collapsible' => TRUE, 
+				//collapsed if already answered
+				'#collapsed' => count($form['#node']->field_answer) != 0,
+			);
+			
+			//answer field
+			$form['response']['answer'] = $form['field_answer'];
+			//unset($form['field_answer']);
+			
+			//responder field
+			//remove the 'none' value for responder
+			unset($form['field_responder']['und']['#options']['_none']);
+			//move it to the fieldset
+			
+			//set responder field to logged in user
+			global $user;
+			$form['field_responder']['und']['#default_value'] = $user->uid;
+			//make it read-only
+			$form['field_responder']['und']['#attributes']['disabled'] = TRUE;
+			dsm($form['field_responder']);
+			$form['response']['responder'] = $form['field_responder'];
+			//remove from original location
+			unset($form['field_responder']);
+			
+			//attachmentfield
+			//move to fieldset
+			$form['response']['attachments'] = $form['field_attachments'];
+			//remove from original location
+			unset($form['field_attachments']);
+			dsm($form);
+			*/
+			//set responder field to logged in user if it is empty
+			
+			//dsm($form['field_responder']);
+			if(count($form['field_responder']['und']['#default_value']) == 0){
+				global $user;
+				$form['field_responder']['und']['#default_value'] = $user->uid;
+			}
+			
+			//make it read-only
+			$form['field_responder']['und']['#attributes']['disabled'] = TRUE;
+		}
+	}
+	else{
+		
+		//no nid or no permission to answer the question > only show question fields
+		//remove all answer fields
+		
+		unset($form['field_answer']);
+		unset($form['field_responder']);
+		unset($form['field_attachments']);
+		unset($form['field_images']);
+		unset($form['field_state']);
+		
+		//changed with new module field group
+		//remove answer group
+		unset($form['#fieldgroups']);
+		unset($form['#group_children']);
+		//dsm($form);
+		
+		//change the selection of taxonomy
+		//unset($form['']);
+		//$form['']
+		$form['field_course_term']['und']['#config']['module'] = 'vragentrommel';
+	}
+	//dsm($form['field_course_term']);
+}
+
+
+
+
+//possible solution: implement all hooks by dispatching to hs_taxonomy implementation except for the select_children hook
+// and set the module parameter to this module
+
+/**
+ * Implementation of hook_hierarchical_select_params().
+ */
+function vragentrommel_hierarchical_select_params() {
+	return hs_taxonomy_hierarchical_select_params();
+}
+/**
+ * Implementation of hook_hierarchical_select_root_level().
+ */
+function vragentrommel_hierarchical_select_root_level($params) {
+	return hs_taxonomy_hierarchical_select_root_level($params);
+}
+
+/**
+* implementation of hook_hierarchical_select_children(). This time I'm realling implementing the hook :)
+*/
+function vragentrommel_hierarchical_select_children($parent, $params) {
+	
+
+	
+	$child_terms = taxonomy_get_children($parent, $params['vid']);
+	//dsm($child_terms);
+	//check if the child_terms are integer (in this case: year). If so only return the most recent one; else return all children
+	//dsm("#chilren: ".count($child_terms));
+	//taxonomy_get_children returns an hashmap where the keys are term ids. not necessary here, so let's remove them
+	$child_terms = array_values($child_terms);
+	//dsm($child_terms);
+	
+	
+	if(count($child_terms)>0 && intval($child_terms[0]->name) != 0){
+		//we have children and they are numbers
+		//search for the greatest int
+		$max = -1;$max_term = NULL;
+		foreach($child_terms as $term){
+			$year = intval($term->name);
+			if(intval($year) > intval($max)){
+				//found new max, change values
+				$max = $year;
+				$max_term = $term;
+				//dsm("new max year: ".$year);
+			}
+		}
+		//reset $child_terms array
+		$child_terms = array();
+		$child_terms[] = $max_term;
+	}
+	
+	//next lines are a rip from _hs_taxonomy_hierarchical_select_terms_to_options :-)
+	$options = array();
+  foreach ($child_terms as $key => $term) {
+    // Use the translated term when available!
+    if (module_exists('i18ntaxonomy') && isset($term->vid) && i18ntaxonomy_vocabulary($term->vid) == I18N_TAXONOMY_LOCALIZE) {
+      $options[$term->tid] = tt("taxonomy:term:$term->tid:name", $term->name);
+    }
+    else {
+      $options[$term->tid] = t($term->name);
+    }
+  }
+  
+  return $options;
+  
+}
+/**
+ * Implementation of hook_hierarchical_select_lineage().
+ */
+function vragentrommel_hierarchical_select_lineage($item, $params) {
+  return hs_taxonomy_hierarchical_select_lineage($item, $params);
+}
+/**
+ * Implementation of hook_hierarchical_select_valid_item().
+ */
+function vragentrommel_hierarchical_select_valid_item($item, $params) {
+  return hs_taxonomy_hierarchical_select_valid_item($item, $params);
+}
+/**
+ * Implementation of hook_hierarchical_select_item_get_label().
+ */
+function vragentrommel_hierarchical_select_item_get_label($item, $params) {
+	return hs_taxonomy_hierarchical_select_item_get_label($item, $params);
+}
+/**
+ * Implementation of hook_hierarchical_select_create_item().
+ */
+function vragentrommel_hierarchical_select_create_item($label, $parent, $params) {
+  return hs_taxonomy_hierarchical_select_create_item($label, $parent, $params);
+}
+/**
+ * Implementation of hook_hierarchical_select_entity_count().
+ */
+function vragentrommel_hierarchical_select_entity_count($item, $params) {
+  return hs_taxonomy_hierarchical_select_entity_count($item, $params);
+}
+
+/**
+ * Implementation of hook_hierarchical_select_implementation_info().
+ */
+function vragentrommel_hierarchical_select_implementation_info() {
+  return hs_taxonomy_hierarchical_select_implementation_info();
+}
+
+/**
+ * Implementation of hook_hierarchical_select_config_info().
+ */
+function vragentrommel_hierarchical_select_config_info() {
+  return hs_taxonomy_hierarchical_select_config_info();
+}
