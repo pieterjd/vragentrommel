@@ -148,37 +148,13 @@ function vragentrommel_hierarchical_select_params() {
  * Implementation of hook_hierarchical_select_root_level().
  */
 function vragentrommel_hierarchical_select_root_level($params) {
-	$terms = hs_taxonomy_hierarchical_select_root_level($params);
-	//dsm($terms);
-	//remove disabled courses
-	 //get chapters vocabulary
-  $vid = taxonomy_vocabulary_machine_name_load('chapters')->vid;
-  //get root terms
-	$all_courses = taxonomy_get_tree($vid,0,1);
-	$all_courses_tid = array();
-	foreach($all_courses as $term){
-	  $all_courses_tid[] = $term->tid;
-	}
-	//dsm($all_courses_tid);
-	$enabled_courses = variable_get('vragentrommel_enabled_courses');
-	//dsm($enabled_courses);
-	$disabled_courses = array_diff($all_courses_tid,$enabled_courses);
-	//dsm($disabled_courses);
-	//remove disabled terms from $terms
-	foreach($disabled_courses as $key => $tid){
-	  unset($terms[$tid]);
-	}
-	//dsm($terms);
-	return $terms;
+	return hs_taxonomy_hierarchical_select_root_level($params);
 }
 
 /**
 * implementation of hook_hierarchical_select_children(). This time I'm realling implementing the hook :)
 */
 function vragentrommel_hierarchical_select_children($parent, $params) {
-	
-
-	
 	$child_terms = taxonomy_get_children($parent, $params['vid']);
 	//dsm($child_terms);
 	//check if the child_terms are integer (in this case: year). If so only return the most recent one; else return all children
@@ -186,15 +162,21 @@ function vragentrommel_hierarchical_select_children($parent, $params) {
 	//taxonomy_get_children returns an hashmap where the keys are term ids. not necessary here, so let's remove them
 	$child_terms = array_values($child_terms);
 	//dsm($child_terms);
+	//the year is at the second level of the taxonomy tree, the root being the the zeroth level, the coursename the first level
+	//so check if the course name is indeed on level 1
 	
+	$parents = taxonomy_get_parents($parent);
+	$on_first_level = empty($parents);
+		
 	
-	if(count($child_terms)>0 && intval($child_terms[0]->name) != 0){
-		//we have children and they are numbers
-		//search for the greatest int
-		$max = -1;$max_term = NULL;
+	if(count($child_terms)>0 && $on_first_level){
+		//we have children and they are strings
+		//search for the greatest string
+		$max = '-1';$max_term = NULL;
 		foreach($child_terms as $term){
-			$year = intval($term->name);
-			if(intval($year) > intval($max)){
+			$year = $term->name;
+			if(strcasecmp($year,$max)>0){
+			//if(intval($year) > intval($max)){
 				//found new max, change values
 				$max = $year;
 				$max_term = $term;
